@@ -1,9 +1,9 @@
-import { Color, Float32BufferAttribute, PlaneGeometry, SRGBColorSpace, Vector3 } from 'three'
+import { Color, DisplayP3ColorSpace, Float32BufferAttribute, PlaneGeometry, Vector3 } from 'three'
 import { createNoise2D, NoiseFunction2D } from 'simplex-noise'
 import { random } from 'lodash'
 import TinyColor from 'tinycolor2'
 
-let noise2D: NoiseFunction2D | null = null
+let noisePattern: NoiseFunction2D = createNoise2D()
 const vertex = new Vector3()
 const vertexColor = new Color()
 
@@ -13,7 +13,7 @@ const map = (val: number, smin: number, smax: number, emin: number, emax: number
 }
 
 const noise = (x: number, y: number) => {
-  return map(noise2D!(x, y), -1, 1, 0, 1)
+  return map(noisePattern(x, y), -1, 1, 0, 1)
 }
 
 const octave = (x: number, y: number, octaves: number) => {
@@ -33,7 +33,7 @@ const octave = (x: number, y: number, octaves: number) => {
 }
 
 const getRandomTone = (color: any): [number, number, number] => {
-  const modifier = random(-50, 50)
+  const modifier = random(-25, 25)
   const r = (color.r + modifier) / 255
   const g = (color.g + modifier) / 255
   const b = (color.b + modifier) / 255
@@ -41,10 +41,10 @@ const getRandomTone = (color: any): [number, number, number] => {
   return [r, g, b]
 }
 
-const generateTexture = (size: number) => {
+const generateTexture = (width: number, height: number) => {
   const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
+  canvas.width = width + 1
+  canvas.height = height + 1
 
   const context = canvas.getContext('2d')!
   context.fillStyle = 'black'
@@ -59,25 +59,27 @@ const generateTexture = (size: number) => {
     }
   }
 
-  return context.getImageData(0, 0, canvas.width, canvas.height)
+  return context.getImageData(0, 0, canvas.width, canvas.height, { colorSpace: 'display-p3' })
 }
 
-export const getTerrainGeometry = ({ size, color, height }: any) => {
-  noise2D = createNoise2D()
+export const getTerrainGeometry = ({ width, height, depth, detail, color }: any, newNoise?: NoiseFunction2D) => {
+  if (!width || !height) return
 
-  const texture = generateTexture((size / 20) * 1.1)
+  if (newNoise) { noisePattern = newNoise }
 
-  let terrainGeometry = new PlaneGeometry(size, size, size / 20, size / 20)
-  terrainGeometry.rotateX(-Math.PI / 2)
+  const widthSegments = width / ((100 - detail) || 1)
+  const heightSegments = height / ((100 - detail) || 1)
+  const texture = generateTexture(widthSegments, heightSegments)
+
+  let terrainGeometry = new PlaneGeometry(width, height, widthSegments, heightSegments)
+  terrainGeometry.rotateX(Math.PI / 2)
 
   let position = terrainGeometry.attributes.position
 
   for (let i = 0; i < position.count; i++) {
-    const redValue = texture.data[Math.floor(i * 4)]
-
+    const tone = texture.data[i * 4]
     vertex.fromBufferAttribute(position, i)
-    vertex.y += map(redValue, 0, 255, -10, 10) * (height / 10)
-
+    vertex.y += map(tone, 0, 255, -10, 10) * (depth / 10)
     position.setY(i, vertex.y)
   }
 
@@ -89,7 +91,7 @@ export const getTerrainGeometry = ({ size, color, height }: any) => {
 
   for (let i = 0; i < position.count; i++) {
     const rgb = new TinyColor(color).toRgb()
-    vertexColor.setRGB(...getRandomTone(rgb), SRGBColorSpace)
+    vertexColor.setRGB(...getRandomTone(rgb), DisplayP3ColorSpace)
     vertexColors.push(vertexColor.r, vertexColor.g, vertexColor.b)
   }
 
